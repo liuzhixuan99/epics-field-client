@@ -14,4 +14,6 @@ Before publishing changes:
 4. Inspect the actual ZIP, source distribution and wheel contents. Do not include bytecode or generated diagnostics.
 5. Run tests and confirm actual environment collection, report access isolation and read-only device boundaries.
 
+Portable binaries are Release assets, not Git source files. Retain component license texts and inventories. Do not bundle unused GNU Readline/curses. For native libraries requiring corresponding source, include the matching source, distribution patches and build specification with the binary release; verify provenance rather than assuming a compiler version. See `THIRD_PARTY_NOTICES.txt` and `third-party-licenses/Native-source-provenance.txt` for this release.
+
 This repository uses a neutral local commit identity for its initial public snapshot. Contributors should choose an appropriate public Git identity before adding commits. No automatic upload or GitHub publication is built into the application.

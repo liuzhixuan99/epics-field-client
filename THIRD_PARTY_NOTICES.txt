@@ -1,0 +1,31 @@
+EPICS Field Client third-party notices
+
+This notice does not assign an open-source license to the original application code.
+Third-party components retain their own copyright and license terms.
+
+Direct dependencies:
+- LabMCP / LabMCP EPICS: Apache-2.0, K-Dense and LabMCP contributors.
+  https://github.com/K-Dense-AI/lab-instrument-mcps
+- MCP Python SDK: MIT.
+  https://github.com/modelcontextprotocol/python-sdk
+- FastMCP: Apache-2.0.
+  https://github.com/PrefectHQ/fastmcp
+- caproto: BSD-3-Clause.
+  https://github.com/caproto/caproto
+- jsonschema: MIT.
+  https://github.com/python-jsonschema/jsonschema
+- NumPy and its bundled libraries: see NumPy's complete license notices.
+  https://github.com/numpy/numpy
+
+Portable releases include a component/version/license inventory in their own
+THIRD_PARTY_NOTICES.txt and retain license texts under _internal/*.dist-info/.
+Supplementary licenses for Python, the PyInstaller bootloader exception,
+LabMCP and pyserial are in third-party-licenses/.
+
+The Linux portable release also includes corresponding GCC runtime-library
+source, patches and build specification in third-party-sources/.
+Exact version, source URL, checksum, preserved GNU Build IDs and auditwheel
+library-name/RPATH changes are documented in
+third-party-licenses/Native-source-provenance.txt.
+
+GNU Readline/curses are unused and excluded from the desktop build.

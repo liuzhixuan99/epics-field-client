@@ -7,6 +7,9 @@ let detectedCA = {};
 let hasNameServer = false;
 let currentJob = null;
 let busy = false;
+let toolCatalog = null;
+let toolInputs = [];
+let lastToolJob = null;
 
 async function api(path, body) {
   const response = await fetch(path, {method: body === undefined ? "GET" : "POST",
@@ -53,6 +56,11 @@ function setBusy(value) {
   for (const button of document.querySelectorAll("button[data-kind]")) button.disabled = value;
   for (const input of form.elements) if (input.name) input.disabled = value;
   for (const id of ["export-md", "export-json"]) document.getElementById(id).disabled = value || !currentJob;
+  for (const control of document.querySelectorAll("#tool-form input, #tool-form textarea, #tool-select")) control.disabled = value;
+  document.querySelector("#load-tools").disabled = value;
+  const selected = selectedTool();
+  document.querySelector("#run-tool").disabled = value || !selected?.enabled;
+  document.querySelector("#export-tool").disabled = value || !lastToolJob;
 }
 function display(value) {
   if (value === null || value === undefined || value === "") return "未检测到";
@@ -106,8 +114,8 @@ function environmentSummary(environment) {
     if (!environment.network_details?.length) paragraph(network, "本次未收集到网络信息。");
   }
   const note = document.querySelector("#platform-note");
-  note.hidden = environment.system === "Linux";
-  note.textContent = `当前检测的是 ${environment.system} 电脑。部署目标为 Linux，请在目标 Linux 终端运行后导出现场报告。`;
+  note.hidden = true;
+  note.textContent = "";
 }
 function shortError(stage) {
   if (stage.error) return stage.error;
@@ -165,6 +173,7 @@ async function run(kind) {
   document.querySelector("#next-action").textContent = "";
   setBusy(false);
   const started = Date.now();
+  let loadAfter = false;
   try {
     const config = configuration(kind);
     if (kind === "real" && !config.pv_name) { form.elements.pv_name.focus(); throw new Error("请填写一个已知可读的数据名称（PV）。"); }
@@ -177,12 +186,132 @@ async function run(kind) {
       await new Promise(resolve => setTimeout(resolve,700));
       const state = await api(`/api/jobs/${job.id}`);
       if (state.state === "error") throw new Error(state.error);
-      if (state.state === "done") { showResult(state); message.textContent = "收集完成，实际发现的信息如下。"; break; }
+      if (state.state === "done") { showResult(state); message.textContent = "收集完成，实际发现的信息如下。"; loadAfter = kind === "real" && state.report.conclusion.real_connection_verified; break; }
       message.textContent = `正在${kind === "real" ? "读取设备" : kind === "simulation" ? "检查软件" : "收集环境信息"}，已等待 ${Math.floor((Date.now()-started)/1000)} 秒。`;
     }
   } catch (error) { message.textContent = error.message; document.querySelector("#report-status").textContent = "本次操作没有生成报告，请按提示重试。"; }
   finally { setBusy(false); }
+  if (loadAfter) await loadTools();
 }
+
+const toolLabels = {get_connection_info:"连接与服务状态",get_command_log:"查看操作日志",reconnect:"重新连接",
+  get_pv:"读取一个 PV",get_pvs:"批量读取 PV",pv_info:"PV 地址与权限",monitor_pv:"持续监测 PV",
+  put_pv:"写入一个 PV",put_pvs:"批量写入 PV",apply_safe_state:"执行安全动作"};
+const parameterLabels = {name:"PV 名称",names:"PV 名称列表",value:"写入值（JSON）",writes:"写入列表（JSON）",
+  max_elements:"最多返回的数组元素",duration_s:"监测时长（秒）",max_updates:"最多采集的变化次数",
+  max_points:"最多返回的数据点",limit:"日志条数",wait:"等待 IOC 确认完成",timeout_s:"等待完成的时间（秒）"};
+function selectedTool() {
+  return toolCatalog?.tools.find(tool => tool.name === document.querySelector("#tool-select").value);
+}
+function renderToolConnection() {
+  document.querySelector("#tool-connection").textContent = `工具目标：${toolCatalog.connection.server} · PV：${toolCatalog.config.pv_name} · ${toolCatalog.write_pvs.length ? "允许写入：" + toolCatalog.write_pvs.join("、") : "只读模式；上游不会提供 put_pv／put_pvs。"}`;
+}
+function invalidateTools() {
+  toolCatalog = null;
+  lastToolJob = null;
+  document.querySelector("#tool-workspace").hidden = true;
+  document.querySelector("#tools-status").textContent = "连接参数已变化，请测试设备连接或重新加载工具。";
+  document.querySelector("#run-tool").disabled = true;
+}
+function renderToolForm() {
+  const tool = selectedTool();
+  const fields = document.querySelector("#tool-fields"); fields.replaceChildren(); toolInputs = [];
+  lastToolJob = null;
+  document.querySelector("#tool-result").hidden = true;
+  document.querySelector("#tool-result-status").textContent = tool?.disabled_reason || "填写参数后运行；返回结果将显示在这里。";
+  document.querySelector("#tool-description").textContent = tool?.description || "";
+  document.querySelector("#tool-schema").textContent = JSON.stringify(tool?.input_schema || {}, null, 2);
+  document.querySelector("#write-confirmation").hidden = !tool?.write || !tool.enabled;
+  document.querySelector("#confirm-write").checked = false;
+  if (!tool) return;
+  const required = new Set(tool.input_schema.required || []);
+  for (const [key, spec] of Object.entries(tool.input_schema.properties || {})) {
+    const label = document.createElement("label");
+    const title = document.createElement("span"); title.textContent = `${key} · ${parameterLabels[key] || key}${required.has(key) ? "（必填）" : ""}`; label.append(title);
+    const complex = !["string", "number", "integer", "boolean"].includes(spec.type);
+    const input = document.createElement(complex ? "textarea" : "input");
+    input.name = key; input.required = required.has(key) && spec.type !== "boolean";
+    if (complex) { input.rows = 4; input.placeholder = "输入合法 JSON，例如 [\"PV:ONE\", \"PV:TWO\"]"; }
+    else if (spec.type === "boolean") input.type = "checkbox";
+    else if (["integer", "number"].includes(spec.type)) { input.type = "number"; input.step = spec.type === "integer" ? "1" : "any"; if (spec.minimum !== undefined) input.min = spec.minimum; if (spec.maximum !== undefined) input.max = spec.maximum; }
+    else input.type = "text";
+    if (spec.default !== undefined) { if (spec.type === "boolean") input.checked = spec.default; else input.value = complex ? JSON.stringify(spec.default, null, 2) : spec.default; }
+    else if (key === "name") input.value = form.elements.pv_name.value.trim();
+    else if (key === "names") input.value = JSON.stringify([form.elements.pv_name.value.trim()], null, 2);
+    input.addEventListener("input",()=>{document.querySelector("#confirm-write").checked=false;});
+    label.append(input); fields.append(label); toolInputs.push({key,spec,input,complex,required:required.has(key)});
+  }
+  if (!toolInputs.length) paragraph(fields, "此工具不需要参数。");
+  setBusy(busy);
+}
+async function waitToolJob(job, statusElement) {
+  const started = Date.now();
+  while (true) {
+    await new Promise(resolve=>setTimeout(resolve,700));
+    const state = await api(`/api/jobs/${job.id}`);
+    if (state.state === "error") throw new Error(state.error);
+    if (state.state === "done") return state;
+    statusElement.textContent = `正在执行，已等待 ${Math.floor((Date.now()-started)/1000)} 秒；请等待结果。`;
+  }
+}
+async function loadTools() {
+  if (busy) return;
+  const status = document.querySelector("#tools-status");
+  invalidateTools();
+  try {
+    const config = configuration("real");
+    if (!config.pv_name) throw new Error("请填写一个已知可读的 PV，再加载工具。");
+    setBusy(true); status.textContent = "正在连接 LabMCP 并读取工具清单…";
+    const job = await api("/api/tools/connect", {config});
+    toolCatalog = (await waitToolJob(job, status)).result;
+    document.querySelector("#tool-workspace").hidden = false;
+    status.textContent = `已加载当前服务的全部 ${toolCatalog.tools.length} 个工具。`;
+    renderToolConnection();
+    table(document.querySelector("#tool-list"), ["工具", "用途", "可运行"], toolCatalog.tools.map(tool=>[tool.name,toolLabels[tool.name] || tool.description,tool.enabled ? tool.write ? "写入（需要确认）" : "是" : tool.disabled_reason]));
+    const select = document.querySelector("#tool-select"); select.replaceChildren();
+    for (const tool of toolCatalog.tools) { const option = document.createElement("option"); option.value=tool.name; option.textContent=`${toolLabels[tool.name] || tool.name} · ${tool.name}${tool.enabled ? "" : "（不可执行）"}`; select.append(option); }
+    select.value = "get_pv"; renderToolForm();
+  } catch (error) { toolCatalog=null; status.textContent=error.message; }
+  finally { setBusy(false); }
+}
+async function runTool(event) {
+  event.preventDefault();
+  if (busy) return;
+  const status=document.querySelector("#tool-result-status"); const output=document.querySelector("#tool-result");
+  lastToolJob=null; output.hidden=true;
+  try {
+    const tool=selectedTool(); if (!tool?.enabled) throw new Error("请先加载并选择可执行的工具。");
+    const args={};
+    for (const field of toolInputs) {
+      const raw=field.input.value.trim();
+      if (field.spec.type === "boolean") args[field.key]=field.input.checked;
+      else if (!raw && !field.required) continue;
+      else if (field.complex) { try { args[field.key]=JSON.parse(raw); } catch { throw new Error(`${field.key} 请填写合法 JSON。`); } }
+      else if (["integer","number"].includes(field.spec.type)) { const value=Number(raw); if (!raw || !Number.isFinite(value)) throw new Error(`${field.key} 请填写有效数字。`); args[field.key]=value; }
+      else args[field.key]=raw;
+    }
+    const confirmed=document.querySelector("#confirm-write").checked;
+    if (tool.write && !confirmed) throw new Error("请核对 PV 与参数，并勾选本次写入确认。");
+    document.querySelector("#confirm-write").checked=false;
+    setBusy(true); status.textContent="正在运行工具…";
+    const job=await api("/api/tools/call", {catalog_id:toolCatalog.id,name:tool.name,arguments:args,confirmed});
+    const result=(await waitToolJob(job,status)).result; lastToolJob=job.id;
+    output.hidden=false; output.textContent=JSON.stringify(result,null,2);
+    if (result.catalog) { toolCatalog=result.catalog; renderToolConnection(); }
+    if (result.connection_lost) { toolCatalog=null; document.querySelector("#tools-status").textContent="工具连接已中断，请重新加载；之前的结果保留如下。"; }
+    status.textContent=toolOutcome(result);
+    document.querySelector("#confirm-write").checked=false;
+  } catch (error) { status.textContent=error.message; }
+  finally { document.querySelector("#confirm-write").checked=false; setBusy(false); }
+}
+function toolOutcome(result) {
+  const partial=result.data?.errors?.length || result.data?.error || result.data?.completed === false || result.data?.results?.some(row=>row.completed === false);
+  return result.outcome_uncertain ? "写入结果不确定：请先读取 PV 核实，勿直接重复执行。" : !result.ok ? "工具执行失败，错误内容如下。" : partial ? "工具已返回，但部分项目失败或尚未完成，请查看结果。" : "工具执行完成，实际返回结果如下。";
+}
+document.querySelector("#load-tools").addEventListener("click",loadTools);
+document.querySelector("#tool-select").addEventListener("change",renderToolForm);
+document.querySelector("#tool-form").addEventListener("submit",runTool);
+document.querySelector("#export-tool").addEventListener("click",async()=>{ const saved=currentJob; currentJob=lastToolJob; await exportReport("json"); currentJob=saved; });
 async function exportReport(extension) {
   if (!currentJob || busy) return;
   try {
@@ -196,7 +325,8 @@ for (const button of document.querySelectorAll("button[data-kind]")) button.addE
 document.querySelector("#export-md").addEventListener("click",()=>exportReport("md"));
 document.querySelector("#export-json").addEventListener("click",()=>exportReport("json"));
 form.addEventListener("submit",event=>event.preventDefault());
-form.elements.address_list.addEventListener("input",sourceHint);
+form.elements.address_list.addEventListener("input",()=>{sourceHint();invalidateTools();});
+form.elements.pv_name.addEventListener("input",invalidateTools);
 (async()=>{
   try {
     const bootstrap = await api("/api/bootstrap"); defaults = bootstrap.defaults; detectedCA = bootstrap.detected_ca_environment; hasNameServer = bootstrap.name_server_configured;

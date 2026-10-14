@@ -6,7 +6,7 @@
 </head><body><main>
   <header><div class="eyebrow">EPICS · 设备连接检测</div><h1>查看环境，验证设备连接</h1>
     <p>自动收集本机信息，测试您指定的设备数据。检测结果会直接显示在下方。</p>
-    <div class="tags"><span>面向 Linux 控制终端</span><span>仅读取数据</span><span>报告保存在本机</span></div>
+    <div class="tags"><span>Windows / Linux</span><span>默认只读</span><span>报告保存在本机</span></div>
   </header>
   <section class="panel controls"><h2>本机检测</h2>
     <p>页面打开后会自动检测电脑环境、EPICS 配置和本机网络信息。</p>
@@ -33,6 +33,23 @@
       <div id="reading" class="reading" hidden><span id="reading-name"></span><strong id="reading-value"></strong><span id="reading-extra"></span></div>
       <div id="test-summary"></div><div id="stage-summary"></div>
       <p id="next-action" class="hint"></p>
+    </div>
+  </section>
+  <section class="panel" id="tools-panel"><h2>LabMCP 工具</h2>
+    <p>设备连接通过后自动加载工具。选择工具、填写参数，再运行查看结果。</p>
+    <div class="actions"><button id="load-tools" class="secondary" disabled>加载／刷新工具</button></div>
+    <p id="tools-status" role="status">请先填写设备地址和 PV，测试设备连接。</p>
+    <div id="tool-workspace" hidden>
+      <p id="tool-connection" class="notice"></p>
+      <div id="tool-list"></div>
+      <label>选择工具<select id="tool-select"></select></label>
+      <p id="tool-description" class="hint"></p>
+      <details><summary>查看原始工具说明与参数格式</summary><pre id="tool-schema"></pre></details>
+      <form id="tool-form"><div id="tool-fields" class="grid"></div>
+        <label id="write-confirmation" class="check" hidden><input id="confirm-write" type="checkbox">我已核对目标 PV 和参数，确认执行本次写入</label>
+        <div class="actions"><button id="run-tool" type="submit">运行工具</button><button id="export-tool" type="button" class="secondary" disabled>导出本次工具结果</button></div>
+      </form>
+      <p id="tool-result-status" role="status"></p><pre id="tool-result" hidden></pre>
     </div>
   </section>
   <section class="panel"><h2>导出报告</h2><p>报告包含上方显示的环境、连接配置和本次测试结果。失败结果也可以导出。</p>

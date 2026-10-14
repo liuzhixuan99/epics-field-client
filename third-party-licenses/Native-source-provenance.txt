@@ -1,0 +1,15 @@
+Corresponding native-library source
+
+The unchanged libquadmath and libgfortran source, distribution patches, and build specification are supplied as gcc-8.5.0-28.el8_10.alma.1.src.rpm.
+Official source: https://vault.almalinux.org/8.10/BaseOS/Source/Packages/gcc-8.5.0-28.el8_10.alma.1.src.rpm
+SHA-256: c94dbbd2cd6d5d01a5a6822ea18f8ce34942c25a80e17b4682d547d5e652dbd0
+
+The bundled libraries were verified against AlmaLinux GCC 8.5.0-28.el8_10.alma.1 by GNU Build ID:
+libquadmath: c1c5f8d61f17e5579c4e85718845b74e4b94116c
+libgfortran: 04dbe32dceb80654422140fb7641f732065999c8
+
+The NumPy/OpenBLAS wheel packaging uses auditwheel to rename shared-library SONAMEs and rewrite RPATHs for local loading; it does not change the corresponding library source.
+libquadmath is LGPL-2.1-or-later. libgfortran is GPL-3.0-or-later WITH GCC-exception-3.1. License texts are preserved in the NumPy license file and third-party-licenses/.
+The shared libraries can be replaced by compatible locally rebuilt versions in _internal/numpy.libs/; retain the wheel's expected SONAMEs. Source RPMs can be inspected/extracted with RPM or rpm2cpio and built with the included spec and patches.
+
+OpenBLAS build provenance: https://github.com/MacPython/openblas-libs/tree/v0.3.34.106.0

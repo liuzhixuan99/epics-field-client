@@ -1,4 +1,5 @@
 .venv/
+.windows-venv/
 .linux-venv/
 .linux-pip-cache/
 .uv-cache/

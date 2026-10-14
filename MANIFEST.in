@@ -1,2 +1,5 @@
 include requirements.txt setup.cmd start.cmd setup.sh start.sh
+include desktop_entry.py desktop.spec
+include THIRD_PARTY_NOTICES.txt
+recursive-include third-party-licenses *.txt
 recursive-include epics_field_client/web *.html *.js *.css

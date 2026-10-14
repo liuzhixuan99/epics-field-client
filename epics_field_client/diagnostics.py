@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .runtime import worker_arguments
+
 CA_KEYS = (
     "EPICS_CA_ADDR_LIST", "EPICS_CA_AUTO_ADDR_LIST", "EPICS_CA_SERVER_PORT",
     "EPICS_CA_REPEATER_PORT", "EPICS_CA_MAX_ARRAY_BYTES",
@@ -220,8 +222,8 @@ async def _mcp_probe(report: dict, config: dict, simulated: bool, log_path: Path
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
-    args = ["-m", "labmcp_epics.server", "--transport", "stdio", "--read-only",
-            "--timeout", str(config["timeout_s"]), "--option", "put_allowlist=(?!)"]
+    args = worker_arguments(["--transport", "stdio", "--read-only",
+            "--timeout", str(config["timeout_s"]), "--option", "put_allowlist=(?!)"])
     if simulated:
         args.append("--simulate")
     report["launch"] = {"command": sys.executable, "args": args, "transport": "stdio"}

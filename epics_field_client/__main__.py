@@ -1,3 +1,3 @@
-from .app import main
+from .runtime import desktop_main
 
-main()
+desktop_main()

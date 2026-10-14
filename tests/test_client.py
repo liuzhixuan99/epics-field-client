@@ -109,6 +109,7 @@ class HTTPTests(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
         self.thread.join()
+        self.app.tool_session.close()
         self.temp.cleanup()
 
     def request(self, path, body=None, headers=None):
@@ -140,10 +141,10 @@ class HTTPTests(unittest.TestCase):
         self.assertNotIn("do-not-export", json.dumps(bootstrap))
         self.assertEqual(bootstrap["defaults"], DEFAULT_CONFIG)
 
-    def test_generic_tool_execution_has_no_endpoint(self):
+    def test_tool_endpoint_rejects_incomplete_requests(self):
         with self.assertRaises(HTTPError) as caught:
             self.request("/api/tools/call", {"name": "put_pv"})
-        self.assertEqual(caught.exception.code, 404)
+        self.assertEqual(caught.exception.code, 400)
 
     def test_previous_reports_are_not_downloadable_in_current_session(self):
         old_id = "a" * 32

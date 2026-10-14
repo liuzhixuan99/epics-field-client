@@ -2,16 +2,20 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
+import os
 import secrets
+import signal
 import threading
 import uuid
-import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .diagnostics import CA_KEYS, DEFAULT_CONFIG, report_markdown, run_probe, validate_config, validate_real_environment
+from .diagnostics import CA_KEYS, DEFAULT_CONFIG, exception_summary, report_markdown, run_probe, validate_config, validate_real_environment
+from .tool_session import ToolSession
+from .runtime import default_data_dir, own_child_processes, open_browser
 
 WEB = Path(__file__).with_name("web")
 
@@ -23,7 +27,7 @@ def write_json(path: Path, value):
 
 
 class FieldApp:
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: Path, *, write_pvs=()):
         self.data_dir = data_dir
         self.reports_dir = data_dir / "reports"
         self.reports_dir.mkdir(parents=True, exist_ok=True)
@@ -32,6 +36,7 @@ class FieldApp:
         self.jobs = {}
         self.active_job = None
         self.workers = []
+        self.tool_session = ToolSession(self.reports_dir / "manual.stderr.log", write_pvs=write_pvs)
 
     def config(self):
         path = self.data_dir / "config.json"
@@ -77,6 +82,48 @@ class FieldApp:
                 for old_id in list(self.jobs)[:-30]:
                     self.jobs.pop(old_id)
         worker = threading.Thread(target=work, name="field-probe", daemon=True)
+        self.workers = [w for w in self.workers if w.is_alive()]
+        self.workers.append(worker)
+        worker.start()
+        return {"id": job_id, "state": "running"}
+
+    def start_tool_job(self, action, payload):
+        if not isinstance(payload, dict):
+            raise ValueError("工具请求必须是对象。")
+        if action == "connect":
+            if set(payload) != {"config"}:
+                raise ValueError("连接请求格式不正确。")
+            value = validate_config(payload["config"])
+        elif action == "call":
+            if set(payload) != {"catalog_id", "name", "arguments", "confirmed"}:
+                raise ValueError("工具调用格式不正确。")
+            if not isinstance(payload["name"], str) or not isinstance(payload["catalog_id"], str) or type(payload["confirmed"]) is not bool:
+                raise ValueError("工具名称、连接编号或确认字段不正确。")
+            value = payload
+        else:
+            raise ValueError("未知工具操作。")
+        with self.lock:
+            if self.active_job:
+                raise RuntimeError("已有操作正在运行，请等待完成。")
+            job_id = uuid.uuid4().hex
+            self.jobs[job_id] = {"id": job_id, "state": "running", "test_kind": "tool_" + action}
+            self.active_job = job_id
+
+        def work():
+            try:
+                result = self.tool_session.request(action, value)
+                if action == "call":
+                    write_json(self.reports_dir / f"{job_id}.json", result)
+                outcome = {"id": job_id, "state": "done", "result": result}
+            except Exception as exc:
+                outcome = {"id": job_id, "state": "error", "error": exception_summary(exc)}
+            with self.lock:
+                self.jobs[job_id] = outcome
+                self.active_job = None
+                for old_id in list(self.jobs)[:-30]:
+                    self.jobs.pop(old_id)
+
+        worker = threading.Thread(target=work, name="manual-tool", daemon=True)
         self.workers = [w for w in self.workers if w.is_alive()]
         self.workers.append(worker)
         worker.start()
@@ -136,7 +183,8 @@ def make_server(app: FieldApp, port=0):
                     inherited = {key: os.environ[key] for key in CA_KEYS if key in os.environ}
                     self.send(200, {"defaults": DEFAULT_CONFIG, "saved_config": saved,
                                     "detected_ca_environment": inherited,
-                                    "name_server_configured": bool(os.environ.get("EPICS_CA_NAME_SERVERS"))})
+                                    "name_server_configured": bool(os.environ.get("EPICS_CA_NAME_SERVERS")),
+                                    "write_pvs": list(app.tool_session.write_pvs)})
                 except (ValueError, OSError) as exc:
                     self.send(400, {"error": f"无法读取连接信息：{exc}"})
             elif path.startswith("/api/jobs/"):
@@ -181,6 +229,8 @@ def make_server(app: FieldApp, port=0):
                     if not isinstance(body, dict) or set(body) != {"config", "kind"}:
                         raise ValueError("测试请求格式不正确。")
                     self.send(202, app.start_job(body["config"], body["kind"]))
+                elif path in {"/api/tools/connect", "/api/tools/call"}:
+                    self.send(202, app.start_tool_job(path.rsplit("/", 1)[1], body))
                 else:
                     self.send(404, {"error": "找不到操作。"})
             except RuntimeError as exc:
@@ -194,30 +244,58 @@ def make_server(app: FieldApp, port=0):
 
 
 def main():
+    own_child_processes()
     parser = argparse.ArgumentParser(description="EPICS 现场测试客户端：本地、无模型、只读。")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--data-dir", type=Path, default=Path("data"))
+    parser.add_argument("--data-dir", type=Path, default=default_data_dir())
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--write-pv", action="append", default=[], metavar="PV", help="允许写入的精确 PV 名称，可重复；未指定时只读")
     args = parser.parse_args()
-    app = FieldApp(args.data_dir.resolve())
+    app = FieldApp(args.data_dir.resolve(), write_pvs=args.write_pv)
     try:
         server = make_server(app, args.port)
     except OSError as exc:
-        parser.exit(1, f"无法启动本地页面：{exc}。可用 --port 更换端口。\n")
+        if exc.errno == errno.EADDRINUSE and args.port == 8765:
+            server = make_server(app, 0)
+        else:
+            parser.exit(1, f"无法启动本地页面：{exc}。可用 --port 更换端口。\n")
+
+    def stop(signum, *_):
+        if signum == getattr(signal, "SIGHUP", None):
+            # A closed PTY rejects even the final status message with EIO.
+            sink = os.open(os.devnull, os.O_WRONLY)
+            try:
+                os.dup2(sink, 1)
+                os.dup2(sink, 2)
+            finally:
+                os.close(sink)
+        raise KeyboardInterrupt
+
+    for name in ("SIGINT", "SIGTERM", "SIGHUP"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), stop)
     url = f"http://127.0.0.1:{server.server_port}"
-    print(f"EPICS 现场测试客户端：{url}\n配置与报告：{app.data_dir}\n按 Ctrl+C 退出。", flush=True)
-    if not args.no_browser:
-        webbrowser.open(url)
+    print(f"EPICS 现场测试客户端：{url}\n配置与报告：{app.data_dir}\n关闭此终端或按 Ctrl+C，检测服务会自动停止。", flush=True)
     try:
+        if not args.no_browser:
+            if not open_browser(url):
+                print(f"未能自动打开浏览器，请打开：{url}", flush=True)
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        # Terminal close must stop promptly, even during a slow device operation.
+        deadline = threading.Timer(5, lambda: os._exit(0))
+        deadline.daemon = True
+        deadline.start()
         server.server_close()
         if app.active_job:
             print("等待当前只读测试退出并关闭 LabMCP…", flush=True)
         for worker in app.workers:
             worker.join()
+        app.tool_session.close()
+        deadline.cancel()
+        print("检测服务已停止。", flush=True)
 
 
 if __name__ == "__main__":
