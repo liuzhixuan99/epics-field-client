@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="field-token" content="__FIELD_TOKEN__">
+  <title>设备连接检测</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head><body><main>
+  <header><div class="eyebrow">EPICS · 设备连接检测</div><h1>查看环境，验证设备连接</h1>
+    <p>自动收集本机信息，测试您指定的设备数据。检测结果会直接显示在下方。</p>
+    <div class="tags"><span>面向 Linux 控制终端</span><span>仅读取数据</span><span>报告保存在本机</span></div>
+  </header>
+  <section class="panel controls"><h2>本机检测</h2>
+    <p>页面打开后会自动检测电脑环境、EPICS 配置和本机网络信息。</p>
+    <div class="actions"><button data-kind="environment" class="secondary" disabled>刷新本机信息</button><button data-kind="simulation" class="secondary" disabled>检查软件读取功能</button></div>
+    <p class="hint">软件检查使用本机模拟数据，不连接现场设备。</p>
+  </section>
+  <section class="panel"><h2>设备连接测试</h2>
+    <form id="config-form">
+      <div class="grid"><label>设备控制地址<input name="address_list" placeholder="IOC 或 CA 网关地址，例如 192.0.2.10" autocomplete="off"></label>
+        <label>数据名称（PV）<input name="pv_name" placeholder="填写一个已知可读的 PV 名称" autocomplete="off"></label></div>
+      <p id="config-source" class="hint">正在读取已有连接信息…</p>
+      <div class="actions"><button type="button" data-kind="real" disabled>测试设备连接</button></div>
+      <p class="hint">不知道地址或 PV 时，请向控制系统负责人获取。只测试填写的这一项数据，不搜索设备清单。</p>
+    </form>
+  </section>
+  <section class="panel" id="collected-section"><div class="section-heading"><h2>已收集的信息</h2><span id="collected-time"></span></div>
+    <p id="message" role="status">正在检测本机环境…</p>
+    <div id="platform-note" class="notice" hidden></div>
+    <div id="collected" hidden>
+      <h3>电脑与软件环境</h3><div id="computer-summary"></div>
+      <h3>检测到的 EPICS 配置</h3><div id="ca-summary"></div>
+      <h3>本机网络</h3><div id="network-summary"></div>
+      <h3>本次测试结果</h3><div id="conclusion" class="conclusion"></div>
+      <div id="reading" class="reading" hidden><span id="reading-name"></span><strong id="reading-value"></strong><span id="reading-extra"></span></div>
+      <div id="test-summary"></div><div id="stage-summary"></div>
+      <p id="next-action" class="hint"></p>
+    </div>
+  </section>
+  <section class="panel"><h2>导出报告</h2><p>报告包含上方显示的环境、连接配置和本次测试结果。失败结果也可以导出。</p>
+    <div class="actions"><button id="export-md" disabled>导出报告</button><button id="export-json" class="secondary" disabled>导出 JSON 数据</button></div>
+    <p id="report-status" class="hint">收集完成后即可导出。</p>
+    <p class="privacy">报告含内部地址、电脑名称及设备读数，仅保存到本机，不会自动发送。</p>
+  </section><footer>设备连接检测 · 无需配置模型</footer>
+</main></body></html>

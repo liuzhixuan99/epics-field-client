@@ -1,0 +1,5 @@
+labmcp-epics==0.1.2
+mcp==2.3.0
+labmcp==0.1.2
+fastmcp==4.1.0
+caproto==1.3.0

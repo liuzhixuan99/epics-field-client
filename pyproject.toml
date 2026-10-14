@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "epics-field-client"
+version = "0.1.0"
+description = "Local, model-free EPICS / LabMCP field diagnostics"
+requires-python = ">=3.11"
+dependencies = ["labmcp-epics==0.1.2", "mcp==2.3.0", "labmcp==0.1.2", "fastmcp==4.1.0", "caproto==1.3.0"]
+
+[project.scripts]
+epics-field-client = "epics_field_client.app:main"
+
+[tool.setuptools.package-data]
+epics_field_client = ["web/index.html", "web/app.js", "web/style.css"]
+
+[tool.setuptools.packages.find]
+include = ["epics_field_client*"]

@@ -1,0 +1,2 @@
+include requirements.txt setup.cmd start.cmd setup.sh start.sh
+recursive-include epics_field_client/web *.html *.js *.css
