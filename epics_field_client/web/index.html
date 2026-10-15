@@ -15,11 +15,14 @@
   </section>
   <section class="panel"><h2>设备连接测试</h2>
     <form id="config-form">
-      <div class="grid"><label>设备控制地址<input name="address_list" placeholder="IOC 或 CA 网关地址，例如 192.0.2.10" autocomplete="off"></label>
-        <label>数据名称（PV）<input name="pv_name" placeholder="填写一个已知可读的 PV 名称" autocomplete="off"></label></div>
+      <p class="hint">先填写一个已知可读的 PV。程序会按所选方式寻找提供它的服务，成功后显示实际地址。</p>
+      <div class="grid"><label>连接方式<select name="search_mode"><option value="inherit">沿用本机 EPICS 配置／默认发现（推荐）</option><option value="broadcast">同网段自动发现指定 PV</option><option value="manual">手动指定 CA 搜索地址</option></select></label>
+        <label>数据名称（PV，必填）<input name="pv_name" placeholder="与原控制软件完全一致的 PV 名称" autocomplete="off"></label></div>
+      <label id="address-options" hidden>CA 搜索地址<input name="address_list" placeholder="例如 192.0.2.10 或 ca-gateway.local:5064" autocomplete="off"></label>
+      <label id="manual-broadcast" class="check" hidden><input name="auto_address" type="checkbox">同时向本机所在子网广播查询</label>
       <p id="config-source" class="hint">正在读取已有连接信息…</p>
       <div class="actions"><button type="button" data-kind="real" disabled>测试设备连接</button></div>
-      <p class="hint">不知道地址或 PV 时，请向控制系统负责人获取。只测试填写的这一项数据，不搜索设备清单。</p>
+      <p class="hint">CA 是通信协议，没有统一的默认 IOC IP。默认搜索端口为 UDP 5064（可由本机环境覆盖）。这里只查询指定 PV，不枚举全部 IOC 或 PV；跨网段通常需要管理员提供搜索地址。不知道 PV 时，请从原控制软件获取或询问负责人。</p>
     </form>
   </section>
   <section class="panel" id="collected-section"><div class="section-heading"><h2>已收集的信息</h2><span id="collected-time"></span></div>
@@ -38,7 +41,7 @@
   <section class="panel" id="tools-panel"><h2>LabMCP 工具</h2>
     <p>设备连接通过后自动加载工具。选择工具、填写参数，再运行查看结果。</p>
     <div class="actions"><button id="load-tools" class="secondary" disabled>加载／刷新工具</button></div>
-    <p id="tools-status" role="status">请先填写设备地址和 PV，测试设备连接。</p>
+    <p id="tools-status" role="status">请先填写 PV 并测试设备连接；地址可由 CA 自动发现。</p>
     <div id="tool-workspace" hidden>
       <p id="tool-connection" class="notice"></p>
       <div id="tool-list"></div>

@@ -20,14 +20,6 @@ async function api(path, body) {
   return value;
 }
 function normalizeAddress(text) { return text.replace(/,/g, " ").trim().split(/\s+/).filter(Boolean).join(" "); }
-function inheritedMode(address) {
-  if (hasNameServer) return false;
-  // Only inherit the exact canonical string the user sees; caproto splits on spaces.
-  const rawAddress = detectedCA.EPICS_CA_ADDR_LIST || "";
-  if (rawAddress !== normalizeAddress(rawAddress)) return false;
-  const original = normalizeAddress(detectedCA.EPICS_CA_ADDR_LIST || "");
-  return (original !== "" && address === original) || (address === "" && original === "" && /^(YES|1|TRUE)$/i.test(detectedCA.EPICS_CA_AUTO_ADDR_LIST || ""));
-}
 function environmentInteger(key, fallback, maximum) {
   if (!Object.hasOwn(detectedCA, key)) return fallback;
   const value = Number(detectedCA[key]);
@@ -37,19 +29,41 @@ function environmentInteger(key, fallback, maximum) {
 function configuration(kind) {
   const result = {...defaults, collect_network: true, run_caget: kind === "real"};
   if (kind !== "real") return {...result, connection_mode: "explicit", address_list: "", auto_address: false, pv_name: ""};
-  const address = normalizeAddress(form.elements.address_list.value);
+  const mode = form.elements.search_mode.value;
+  if (mode === "inherit" && detectedCA.EPICS_CA_ADDR_LIST && detectedCA.EPICS_CA_ADDR_LIST !== normalizeAddress(detectedCA.EPICS_CA_ADDR_LIST)) {
+    throw new Error("本机 EPICS_CA_ADDR_LIST 含逗号或多余空白，当前驱动不能直接沿用。请选择手动模式，核对自动填入的搜索地址。");
+  }
+  const address = mode === "manual" ? normalizeAddress(form.elements.address_list.value) : "";
   return {...result, address_list: address, pv_name: form.elements.pv_name.value.trim(),
-    connection_mode: inheritedMode(address) ? "inherit" : "explicit", auto_address: false,
+    connection_mode: mode === "inherit" ? "inherit" : "explicit",
+    auto_address: mode === "broadcast" || (mode === "manual" && form.elements.auto_address.checked),
     server_port: environmentInteger("EPICS_CA_SERVER_PORT", defaults.server_port, 65535),
     repeater_port: environmentInteger("EPICS_CA_REPEATER_PORT", defaults.repeater_port, 65535),
     max_array_bytes: environmentInteger("EPICS_CA_MAX_ARRAY_BYTES", defaults.max_array_bytes, 16777216)};
 }
 function sourceHint() {
-  const address = normalizeAddress(form.elements.address_list.value);
-  document.querySelector("#config-source").textContent = inheritedMode(address) ?
-    (address ? "已检测到本机 EPICS 配置，本次将沿用该配置。地址已自动填入，可按实际设备修改。" : "已检测到本机已有的自动搜索配置。填写 PV 后会沿用该配置读取，无需另填地址。") :
-    address ? "将使用上面的地址；端口从本机环境读取，未设置时使用默认值。" :
-    "未检测到可直接使用的设备地址，请填写控制系统负责人提供的 IOC／网关地址。";
+  const mode = form.elements.search_mode.value;
+  document.querySelector("#address-options").hidden = mode !== "manual";
+  document.querySelector("#manual-broadcast").hidden = mode !== "manual";
+  const address = detectedCA.EPICS_CA_ADDR_LIST || "未设置";
+  const auto = detectedCA.EPICS_CA_AUTO_ADDR_LIST || "YES（CA 默认值）";
+  document.querySelector("#config-source").textContent = mode === "inherit" ?
+    (hasNameServer ? "检测到 EPICS_CA_NAME_SERVERS，当前适配器不支持。请向控制系统负责人确认，选择手动搜索地址或同网段自动发现。" :
+      `沿用启动本工具的进程配置：搜索地址 ${address}；自动广播 ${auto}。未设置环境变量也能使用 CA 默认发现。其他终端或控制软件内的配置不会自动导入。`) :
+    mode === "broadcast" ? "向本机网卡所在子网广播查询指定 PV，不使用已有地址列表。广播通常不能跨网段；发现成功后会显示响应服务地址。" :
+    "填写 IOC、CA 网关或管理员提供的子网广播地址；多个地址用空格分隔，可带 :端口，不填 http://。这是 CA 搜索目标，可能不同于最终连接的 PV 服务地址。";
+}
+function restoreConfiguration(bootstrap) {
+  // Keep saved advanced parameters; current process CA variables still take precedence.
+  defaults = {...bootstrap.defaults, ...(bootstrap.has_saved_config ? bootstrap.saved_config : {})};
+  detectedCA = bootstrap.detected_ca_environment;
+  hasNameServer = bootstrap.name_server_configured;
+  const saved = bootstrap.saved_config;
+  form.elements.search_mode.value = bootstrap.has_saved_config && saved.connection_mode === "explicit" && (saved.address_list || saved.auto_address) ? (saved.address_list ? "manual" : "broadcast") : "inherit";
+  form.elements.address_list.value = form.elements.search_mode.value === "manual" ? saved.address_list : detectedCA.EPICS_CA_ADDR_LIST || "";
+  form.elements.pv_name.value = saved.pv_name || "";
+  form.elements.auto_address.checked = saved.auto_address;
+  sourceHint();
 }
 function setBusy(value) {
   busy = value;
@@ -94,7 +108,7 @@ function environmentSummary(environment) {
   table(document.querySelector("#computer-summary"), ["检测项目", "发现的信息"], rows);
   const caRows = Object.entries(environment.inherited_ca_environment || {});
   if (environment.ca_name_servers) caRows.push(["EPICS_CA_NAME_SERVERS", environment.ca_name_servers]);
-  table(document.querySelector("#ca-summary"), ["配置项", "本机已有值"], caRows.length ? caRows : [["EPICS 环境变量", "未检测到；需要填写设备地址"]]);
+  table(document.querySelector("#ca-summary"), ["配置项", "本机已有值"], caRows.length ? caRows : [["EPICS 环境变量", "未设置；CA 默认启用本机子网广播发现，无需先填地址"]]);
   if (environment.unsupported_name_server_configured) paragraph(document.querySelector("#ca-summary"), "检测到了 name server 配置，当前适配器不支持。测试时请填写直接可访问的 IOC／网关地址。", "notice");
   const network = document.querySelector("#network-summary"); network.replaceChildren();
   if (environment.network_snapshot) {
@@ -145,9 +159,10 @@ function showResult(job) {
   }
   const testRows = [["本次操作", {environment:"收集本机信息",simulation:"软件自检（不连接现场设备）",real:"真实设备读取"}[report.test_kind]]];
   if (report.test_kind !== "environment") testRows.push(
-    ["测试 PV", report.tested_pv || "未进行设备读取"], ["配置来源", report.config.connection_mode === "inherit" ? "本机 EPICS 环境变量" : "本次填写的地址与默认参数"],
-    ["本次传入搜索地址", report.environment.launch_ca_environment.EPICS_CA_ADDR_LIST],
-    ["实际 PV 服务地址", info?.server], ["PV 类型", info?.native_type], ["IOC 授予读取权限", info?.read_access],
+    ["测试 PV", report.tested_pv || "未进行设备读取"], ["配置来源", report.config.connection_mode === "inherit" ? "本机 EPICS 配置及 CA 默认值" : "本次选择的搜索配置"],
+    ["本次传入搜索地址", report.environment.launch_ca_environment.EPICS_CA_ADDR_LIST || "未指定地址列表"],
+    ["自动广播", report.environment.launch_ca_environment.EPICS_CA_AUTO_ADDR_LIST ?? "YES（CA 默认值）"],
+    ["实际 PV 服务地址（可能为 IOC 或网关）", info?.server], ["PV 类型", info?.native_type], ["IOC 授予读取权限", info?.read_access],
     ["IOC 授予写入权限", info?.write_access], ["数值是否与现场基准一致", "需要现场人员核对"]);
   else testRows.push(["设备连接", "尚未测试；收集电脑信息不会连接设备"]);
   for (const [key, value] of Object.entries(report.runtime_ca_environment || {})) testRows.push([`运行时 ${key}`, value]);
@@ -159,7 +174,7 @@ function showResult(job) {
     stageRows.push(["caget 对照", result.skipped ? "未运行" : result.returncode === 0 ? "成功" : "失败", result.reason || result.stdout || result.error || result.stderr]);
   }
   table(document.querySelector("#stage-summary"), ["检查环节", "结果", "发现的信息"], stageRows.length ? stageRows : [["设备连接", "未测试", "本次只收集本机信息"]]);
-  const next = {simulation_passed:"自检使用模拟数据，现场设备仍需单独测试。",real_pv_read:"请与控制系统中的读数核对后，导出报告反馈。",failed:"请核对地址、PV 和网络条件，具体错误已列在上方。导出报告可供排查。",environment_only:"以上是实际检测到的信息。填写 PV 后可继续测试设备连接。",identity_unverified:"请导出报告核实连接身份，暂不判定现场设备接入成功。"};
+  const next = {simulation_passed:"自检使用模拟数据，现场设备仍需单独测试。",real_pv_read:"请与控制系统中的读数核对后，导出报告反馈。",failed:"请先确认该 PV 在原控制软件中可读。自动发现通常不能跨网段；可向管理员获取 IOC／CA 网关搜索地址，改用手动模式。还需核对 VPN、网卡、防火墙及 PV 读取权限；失败不等于没有 IOC。具体错误与配置可导出反馈。",environment_only:"以上是实际检测到的信息。填写 PV 后可继续测试设备连接，无需先知道 IOC 地址。",identity_unverified:"请导出报告核实连接身份，暂不判定现场设备接入成功。"};
   document.querySelector("#next-action").textContent = next[status] || report.conclusion.message;
   document.querySelector("#report-status").textContent = "报告已准备好，内容与上方本次收集结果一致。";
 }
@@ -177,7 +192,7 @@ async function run(kind) {
   try {
     const config = configuration(kind);
     if (kind === "real" && !config.pv_name) { form.elements.pv_name.focus(); throw new Error("请填写一个已知可读的数据名称（PV）。"); }
-    if (kind === "real" && config.connection_mode === "explicit" && !config.address_list) { form.elements.address_list.focus(); throw new Error("未检测到可用地址，请填写 IOC／CA 网关地址。"); }
+    if (kind === "real" && config.connection_mode === "explicit" && !config.address_list && !config.auto_address) { form.elements.address_list.focus(); throw new Error("手动模式需要填写 CA 搜索地址，或切换到同网段自动发现。"); }
     setBusy(true);
     message.textContent = kind === "real" ? "正在读取指定设备数据…" : kind === "simulation" ? "正在检查软件读取功能…" : "正在收集本机环境和网络信息…";
     if (kind === "real") await api("/api/config", config);
@@ -327,11 +342,11 @@ document.querySelector("#export-json").addEventListener("click",()=>exportReport
 form.addEventListener("submit",event=>event.preventDefault());
 form.elements.address_list.addEventListener("input",()=>{sourceHint();invalidateTools();});
 form.elements.pv_name.addEventListener("input",invalidateTools);
+form.elements.search_mode.addEventListener("change",()=>{sourceHint();invalidateTools();});
+form.elements.auto_address.addEventListener("change",invalidateTools);
 (async()=>{
   try {
-    const bootstrap = await api("/api/bootstrap"); defaults = bootstrap.defaults; detectedCA = bootstrap.detected_ca_environment; hasNameServer = bootstrap.name_server_configured;
-    form.elements.address_list.value = detectedCA.EPICS_CA_ADDR_LIST || bootstrap.saved_config.address_list || "";
-    form.elements.pv_name.value = bootstrap.saved_config.pv_name || "";
-    sourceHint(); await run("environment");
+    restoreConfiguration(await api("/api/bootstrap"));
+    await run("environment");
   } catch (error) { message.textContent = `检测未能启动：${error.message}`; }
 })();

@@ -182,6 +182,7 @@ def make_server(app: FieldApp, port=0):
                     saved = app.config()
                     inherited = {key: os.environ[key] for key in CA_KEYS if key in os.environ}
                     self.send(200, {"defaults": DEFAULT_CONFIG, "saved_config": saved,
+                                    "has_saved_config": (app.data_dir / "config.json").exists(),
                                     "detected_ca_environment": inherited,
                                     "name_server_configured": bool(os.environ.get("EPICS_CA_NAME_SERVERS")),
                                     "write_pvs": list(app.tool_session.write_pvs)})

@@ -17,6 +17,21 @@ from epics_field_client.diagnostics import (
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_ca_defaults_work_without_any_environment_variables(self):
+        config = validate_config({"connection_mode": "inherit", "pv_name": "TEST:TEMP"})
+        validate_real_environment(config, {})
+        env = child_environment(config, {})
+        self.assertNotIn("EPICS_CA_ADDR_LIST", env)
+        self.assertNotIn("EPICS_CA_AUTO_ADDR_LIST", env)
+
+    def test_broadcast_mode_discards_existing_search_addresses(self):
+        config = validate_config({"auto_address": True, "pv_name": "TEST:TEMP"})
+        source = {"EPICS_CA_ADDR_LIST": "old-gateway", "EPICS_CA_AUTO_ADDR_LIST": "NO"}
+        validate_real_environment(config, source)
+        env = child_environment(config, source)
+        self.assertEqual(env["EPICS_CA_ADDR_LIST"], "")
+        self.assertEqual(env["EPICS_CA_AUTO_ADDR_LIST"], "YES")
+
     def test_existing_small_array_limit_is_not_silently_replaced(self):
         config = validate_config({"max_array_bytes": 1024})
         self.assertEqual(child_environment(config, {"USER": "field-test"})["EPICS_CA_MAX_ARRAY_BYTES"], "1024")
@@ -140,6 +155,10 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(bootstrap["detected_ca_environment"]["EPICS_CA_ADDR_LIST"], "ioc.local")
         self.assertNotIn("do-not-export", json.dumps(bootstrap))
         self.assertEqual(bootstrap["defaults"], DEFAULT_CONFIG)
+        self.assertFalse(bootstrap["has_saved_config"])
+        self.app.save_config({"connection_mode": "inherit", "pv_name": "TEST:TEMP"})
+        with self.request("/api/bootstrap") as response:
+            self.assertTrue(json.load(response)["has_saved_config"])
 
     def test_tool_endpoint_rejects_incomplete_requests(self):
         with self.assertRaises(HTTPError) as caught:
