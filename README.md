@@ -2,7 +2,7 @@
 
 本地运行的 EPICS Channel Access（CA）连接检测工具。页面直接显示系统、软件依赖、已有 CA 配置、网卡、路由、PV 读取结果，并支持导出 Markdown／JSON 报告。无需模型或远程应用服务器。
 
-当前 `main` 源码已支持只填写已知 PV、沿用本机配置／默认发现，以及单独选择同网段广播或手动搜索地址。已发布的 v0.1.0 独立运行包尚未包含这些界面更新；使用新功能请按下方说明从源码启动。
+v0.1.1 支持只填写已知 PV、沿用本机配置／默认发现，以及单独选择同网段广播或手动搜索地址。Windows／Linux 独立运行包包含相同更新。
 
 在 [GitHub Releases](https://github.com/liuzhixuan99/epics-field-client/releases/latest) 下载对应系统的运行包。Windows 选择 `epics-field-client-windows-x64.zip`；Linux 选择 `epics-field-client-linux-x64.tar.gz`（x86-64、glibc 2.39+，构建环境 Ubuntu 24.04）。解压整个文件夹后启动应用。
 

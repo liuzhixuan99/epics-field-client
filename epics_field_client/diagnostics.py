@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from .runtime import worker_arguments
+from . import __version__
 
 CA_KEYS = (
     "EPICS_CA_ADDR_LIST", "EPICS_CA_AUTO_ADDR_LIST", "EPICS_CA_SERVER_PORT",
@@ -167,7 +168,7 @@ def collect_environment(config: dict[str, Any]) -> dict[str, Any]:
         except importlib.metadata.PackageNotFoundError:
             versions[package] = None
     result = {
-        "collected_at": now(), "client_version": "0.1.0", "system": platform.system(),
+        "collected_at": now(), "client_version": __version__, "system": platform.system(),
         "release": platform.release(), "machine": platform.machine(), "hostname": platform.node(),
         "python": sys.version, "python_executable": sys.executable, "packages": versions,
         "distribution": linux_distribution(), "cpu_count": os.cpu_count(),
